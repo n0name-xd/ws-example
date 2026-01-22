@@ -44,6 +44,7 @@ export default function Home() {
     const socket = io("http://localhost:3001", {
       query: { role: "user", userId: userId },
       transports: ["websocket"],
+      auth: { token: "abc" },
     });
 
     socket.on("new_message", (data) => {
