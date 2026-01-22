@@ -108,6 +108,8 @@ function App() {
       socketRef.current.emit("message_to_server", {
         text: textContent,
         toUserId: activeUserId,
+        // fileUrl: "/uploads/image.jpg",
+        // fileType: "image",
       });
     }
   };
@@ -147,7 +149,6 @@ function App() {
               <MessageInput
                 placeholder={`Написать пользователю ${activeUserId}...`}
                 onSend={handleSend}
-                attachButton={false}
               />
             </ChatContainer>
           </MainContainer>

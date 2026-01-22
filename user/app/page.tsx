@@ -79,6 +79,8 @@ export default function Home() {
       socketRef.current.emit("message_to_server", {
         text: textContent,
         toUserId: "manager",
+        // fileUrl: "/uploads/image.jpg",
+        // fileType: "image",
       });
     }
   };
