@@ -49,9 +49,8 @@ function App() {
 
   useEffect(() => {
     const socket = io("http://localhost:3001", {
-      query: { role: "manager", userId: "admin" },
+      query: { role: "manager", userId: "admin", token: "abc" },
       transports: ["websocket"],
-      auth: { token: "abc" },
     });
 
     socket.on("new_message", (data) => {
