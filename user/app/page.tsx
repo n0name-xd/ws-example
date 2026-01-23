@@ -42,8 +42,13 @@ export default function Home() {
       .catch((err) => console.error("Ошибка загрузки истории:", err));
 
     const socket = io("http://localhost:3001", {
-      query: { role: "user", userId: userId, token: "abc" },
+      query: { role: "user", userId: userId },
       transports: ["websocket"],
+      auth: { token: "abc2" },
+    });
+
+    socket.on("connect_error", (error) => {
+      console.error("Ошибка подключения:", error.message);
     });
 
     socket.on("new_message", (data) => {

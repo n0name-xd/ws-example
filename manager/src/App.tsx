@@ -49,8 +49,13 @@ function App() {
 
   useEffect(() => {
     const socket = io("http://localhost:3001", {
-      query: { role: "manager", userId: "admin", token: "abc" },
+      query: { role: "manager", userId: "admin" },
       transports: ["websocket"],
+      auth: { token: "abc2" },
+    });
+
+    socket.on("connect_error", (error) => {
+      console.error("Ошибка подключения:", error.message);
     });
 
     socket.on("new_message", (data) => {
@@ -143,7 +148,7 @@ function App() {
             <ChatContainer>
               <MessageList>
                 {messages.map((m, i) => (
-                  <Message key={m?.sentTime ?? "" + i} model={m} />
+                  <Message key={m?.sentTime ?? "" + m.message + i} model={m} />
                 ))}
               </MessageList>
               <MessageInput
