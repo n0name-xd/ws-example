@@ -21,9 +21,14 @@ interface IMessage {
   role: "manager" | "user";
 }
 
+interface IMessageModel extends MessageModel {
+  id?: string;
+  isRead?: boolean;
+}
+
 function App() {
   const socketRef = useRef<Socket | null>(null);
-  const [messages, setMessages] = useState<MessageModel[]>([]);
+  const [messages, setMessages] = useState<IMessageModel[]>([]);
   const [activeUserId, setActiveUserId] = useState("123");
   const activeUserRef = useRef(activeUserId);
   useEffect(() => {
@@ -35,14 +40,27 @@ function App() {
     fetch(`http://localhost:3001/messages/history/${activeUserId}`)
       .then((res) => res.json())
       .then((data) => {
-        const history = data.map((msg: IMessage) => ({
-          message: msg.text,
-          sentTime: msg.createdAt,
-          sender: msg.senderId,
-          direction: msg.role === "manager" ? "outgoing" : "incoming",
-          position: "single",
-        }));
+        const history = data.map(
+          (msg: IMessage & { id: string; isRead: boolean }) => ({
+            message: msg.text,
+            sentTime: msg.createdAt,
+            sender: msg.senderId,
+            direction: msg.role === "manager" ? "outgoing" : "incoming",
+            position: "single",
+            id: msg.id,
+            isRead: msg.isRead,
+            files: data.files,
+          }),
+        );
         setMessages(history);
+
+        const lastIncoming = [...data].reverse().find((m) => m.role === "user");
+        if (lastIncoming && !lastIncoming.isRead && socketRef.current) {
+          socketRef.current.emit("mark_as_read", {
+            messageId: lastIncoming.id,
+            chatWithId: activeUserId,
+          });
+        }
       })
       .catch((err) => console.error("Ошибка истории:", err));
   }, [activeUserId]);
@@ -53,6 +71,22 @@ function App() {
       transports: ["websocket"],
       auth: { token: "abc2" },
     });
+
+    socket.on(
+      "messages_read",
+      (data: { lastReadId: string; readerId: string }) => {
+        if (String(data.readerId) === String(activeUserRef.current)) {
+          setMessages((prev) =>
+            prev.map((m) => {
+              if (m.direction === "outgoing" && !m.isRead) {
+                if (m.id === data.lastReadId) return { ...m, isRead: true };
+              }
+              return m;
+            }),
+          );
+        }
+      },
+    );
 
     socket.on("connect_error", (error) => {
       console.error("Ошибка подключения:", error.message);
@@ -73,6 +107,9 @@ function App() {
           sender: data.senderId,
           direction: data.role === "manager" ? "outgoing" : "incoming",
           position: "single",
+          id: data.id,
+          isRead: data.isRead,
+          files: data.files,
         };
 
         setMessages((prev: MessageModel[]) => {
@@ -89,6 +126,16 @@ function App() {
           return [...prev, incomingMessage] as MessageModel[];
         });
       }
+
+      if (
+        data.role === "user" &&
+        String(data.senderId) === String(activeUserRef.current)
+      ) {
+        socket.emit("mark_as_read", {
+          messageId: data.id,
+          chatWithId: data.senderId,
+        });
+      }
     });
 
     socketRef.current = socket;
@@ -100,16 +147,6 @@ function App() {
 
   const handleSend = (_: string, textContent: string) => {
     if (socketRef.current && activeUserId) {
-      const newMessage = {
-        message: textContent,
-        sentTime: new Date().toISOString(),
-        sender: "admin",
-        direction: "outgoing",
-        position: "single",
-      } as MessageModel;
-
-      setMessages((prev) => [...prev, newMessage]);
-
       socketRef.current.emit("message_to_server", {
         text: textContent,
         toUserId: activeUserId,
@@ -122,7 +159,7 @@ function App() {
   return (
     <div>
       <h1>Панель Администратора</h1>
-      <div style={{ display: "flex", height: "600px" }}>
+      <div style={{ display: "flex", height: "500px" }}>
         <div style={{ width: "300px", borderRight: "1px solid #ccc" }}>
           <ConversationList>
             <Conversation
@@ -147,8 +184,22 @@ function App() {
           <MainContainer style={{ borderRadius: "0 10px 10px 0" }}>
             <ChatContainer>
               <MessageList>
-                {messages.map((m, i) => (
-                  <Message key={m?.sentTime ?? "" + m.message + i} model={m} />
+                {messages.map((m: IMessageModel, i) => (
+                  <Message key={m.id || i} model={m}>
+                    {/* Только для исходящих сообщений менеджера */}
+                    {m.direction === "outgoing" && (
+                      <Message.Footer>
+                        <div
+                          style={{
+                            fontSize: "12px",
+                            color: m.isRead ? "#06c" : "#999",
+                          }}
+                        >
+                          {m.isRead ? "✓✓ Прочитано" : "✓ Отправлено"}
+                        </div>
+                      </Message.Footer>
+                    )}
+                  </Message>
                 ))}
               </MessageList>
               <MessageInput
