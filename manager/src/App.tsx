@@ -1,7 +1,7 @@
 import "./App.css";
 import "@chatscope/chat-ui-kit-styles/dist/default/styles.min.css";
 import { io, Socket } from "socket.io-client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   MainContainer,
   ChatContainer,
@@ -26,16 +26,27 @@ interface IMessageModel extends MessageModel {
   isRead?: boolean;
 }
 
+interface User {
+  id: string;
+  senderId: string;
+  receiverId: string;
+  role: string;
+}
+
+const API_URL = "http://localhost:3001";
+
 function App() {
   const socketRef = useRef<Socket | null>(null);
   const [messages, setMessages] = useState<IMessageModel[]>([]);
   const [activeUserId, setActiveUserId] = useState("123");
   const activeUserRef = useRef(activeUserId);
-  useEffect(() => {
-    activeUserRef.current = activeUserId;
-  }, [activeUserId]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [roomData, setRoomData] = useState<{
+    userId: string;
+    roomName: string;
+  }>({ userId: "", roomName: "" });
 
-  useEffect(() => {
+  const getHistory = useCallback(() => {
     if (!activeUserId) return;
     fetch(`http://localhost:3001/messages/history/${activeUserId}`)
       .then((res) => res.json())
@@ -65,8 +76,23 @@ function App() {
       .catch((err) => console.error("Ошибка истории:", err));
   }, [activeUserId]);
 
+  const getUsersList = useCallback(() => {
+    fetch(`${API_URL}/managers/active-chats`)
+      .then((e) => e.json())
+      .then((e) => setUsers(e as User[]));
+  }, []);
+
   useEffect(() => {
-    const socket = io("http://localhost:3001", {
+    activeUserRef.current = activeUserId;
+  }, [activeUserId]);
+
+  useEffect(() => {
+    getUsersList();
+    getHistory();
+  }, [getHistory, getUsersList]);
+
+  useEffect(() => {
+    const socket = io(API_URL, {
       query: { role: "manager", userId: "admin" },
       transports: ["websocket"],
       auth: { token: "abc2" },
@@ -88,15 +114,14 @@ function App() {
       },
     );
 
-    socket.on("connect_error", (error) => {
-      console.error("Ошибка подключения:", error.message);
-    });
+    socket.on("update_chat_list", () => getUsersList());
+
+    socket.on("connect_error", (error) =>
+      console.error("Ошибка подключения:", error.message),
+    );
 
     socket.on("new_message", (data) => {
-      console.log("Данные от сокета:", data);
-
       const currentChatId = activeUserRef.current;
-
       const isFromActiveUser = String(data.senderId) === String(currentChatId);
       const isToActiveUser = String(data.receiverId) === String(currentChatId);
 
@@ -143,41 +168,76 @@ function App() {
     return () => {
       socket.disconnect();
     };
-  }, []);
+  }, [getUsersList]);
 
   const handleSend = (_: string, textContent: string) => {
     if (socketRef.current && activeUserId) {
       socketRef.current.emit("message_to_server", {
         text: textContent,
         toUserId: activeUserId,
-        // fileUrl: "/uploads/image.jpg",
-        // fileType: "image",
       });
+    }
+  };
+
+  const addChat = () => {
+    if (roomData.userId && roomData.roomName) {
+      setActiveUserId(roomData.userId);
+      setUsers(
+        (p) =>
+          [
+            ...p,
+            {
+              senderId: roomData.userId,
+              receiverId: "admin",
+              role: "user",
+            },
+          ] as User[],
+      );
     }
   };
 
   return (
     <div>
-      <h1>Панель Администратора</h1>
+      <h1 style={{ fontSize: "20px" }}>Панель Администратора</h1>
+      <div style={{ border: "1px solid blue", width: "200px" }}>
+        <button onClick={() => addChat()}>Добавить чат</button>
+        <br />
+        <input
+          type="text"
+          placeholder="userId"
+          value={roomData.userId}
+          onChange={(e) =>
+            setRoomData((p) => ({ ...p, userId: e.target.value }))
+          }
+        />
+        <br />
+        <input
+          type="text"
+          placeholder="название комнаты"
+          value={roomData.roomName}
+          onChange={(e) =>
+            setRoomData((p) => ({ ...p, roomName: e.target.value }))
+          }
+        />
+      </div>
       <div style={{ display: "flex", height: "500px" }}>
-        <div style={{ width: "300px", borderRight: "1px solid #ccc" }}>
-          <ConversationList>
-            <Conversation
-              name="Пользователь 123"
-              lastSenderName={activeUserId === "123" ? "Вы" : "Клиент"}
-              active={activeUserId === "123"}
-              onClick={() => setActiveUserId("123")}
-            >
-              <Avatar src="https://chatscope.io/storybook/react/assets/lilly-aj6lnGPk.svg" />
-            </Conversation>
-
-            <Conversation
-              name="Пользователь 456"
-              active={activeUserId === "456"}
-              onClick={() => setActiveUserId("456")}
-            >
-              <Avatar src="https://chatscope.io/storybook/react/assets/zoe-E7ZdmXF0.svg" />
-            </Conversation>
+        <div>
+          <ConversationList
+            style={{ width: "300px", borderRight: "1px solid #ccc" }}
+          >
+            {users?.map((e) => {
+              return (
+                <Conversation
+                  key={e.id}
+                  name={`${e.senderId}`}
+                  lastSenderName={activeUserId === e.senderId ? "Вы" : "Клиент"}
+                  active={activeUserId === e.senderId}
+                  onClick={() => setActiveUserId(e.senderId)}
+                >
+                  <Avatar src="https://chatscope.io/storybook/react/assets/lilly-aj6lnGPk.svg" />
+                </Conversation>
+              );
+            })}
           </ConversationList>
         </div>
         <div style={{ flexGrow: 1 }}>
