@@ -39,6 +39,7 @@ function App() {
   const socketRef = useRef<Socket | null>(null);
   const [messages, setMessages] = useState<IMessageModel[]>([]);
   const [activeUserId, setActiveUserId] = useState("123");
+  const [currentRoomId, setCurrentRoomId] = useState<string | null>(null);
   const activeUserRef = useRef(activeUserId);
   const [users, setUsers] = useState<User[]>([]);
   const [roomData, setRoomData] = useState<{
@@ -137,6 +138,7 @@ function App() {
           files: data.files,
         };
 
+        setCurrentRoomId(data.roomId);
         setMessages((prev: MessageModel[]) => {
           const isDuplicate = prev.some((m) => {
             if (m.message !== incomingMessage.message) return false;
@@ -175,6 +177,7 @@ function App() {
       socketRef.current.emit("message_to_server", {
         text: textContent,
         toUserId: activeUserId,
+        roomId: currentRoomId,
       });
     }
   };
