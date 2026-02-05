@@ -8,79 +8,74 @@ import {
   MessageList,
   Message,
   MessageInput,
-  ConversationList,
-  Conversation,
-  Avatar,
   type MessageModel,
 } from "@chatscope/chat-ui-kit-react";
-
-interface IMessage {
-  text: string;
-  createdAt: string | number;
-  senderId: string;
-  role: "manager" | "user";
-}
-
-interface IMessageModel extends MessageModel {
-  id?: string;
-  isRead?: boolean;
-}
-
-interface User {
-  id: string;
-  senderId: string;
-  receiverId: string;
-  role: string;
-}
+import type { IMessage, IMessageModel, User } from "./types";
+import { AddChart } from "./components/AddChart";
+import { Users } from "./components/Users";
 
 const API_URL = "http://localhost:3001";
 
 function App() {
   const socketRef = useRef<Socket | null>(null);
   const [messages, setMessages] = useState<IMessageModel[]>([]);
-  const [activeUserId, setActiveUserId] = useState("123");
-  const [currentRoomId, setCurrentRoomId] = useState<string | null>(null);
+  const [activeUserId, setActiveUserId] = useState<string | undefined>();
+  const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
   const activeUserRef = useRef(activeUserId);
+  const activeRoomRef = useRef(activeRoomId);
   const [users, setUsers] = useState<User[]>([]);
-  const [roomData, setRoomData] = useState<{
-    userId: string;
-    roomName: string;
-  }>({ userId: "", roomName: "" });
 
   const getHistory = useCallback(() => {
-    if (!activeUserId) return;
-    fetch(`http://localhost:3001/messages/history/${activeUserId}`)
-      .then((res) => res.json())
+    if (!activeRoomId) return;
+
+    fetch(`${API_URL}/messages/history/room/${activeRoomId}`)
+      .then((res) => {
+        if (!res.ok) throw new Error("Ошибка сервера или комната не найдена");
+        return res.json();
+      })
       .then((data) => {
+        if (!Array.isArray(data)) {
+          setMessages([]);
+          return;
+        }
+
         const history = data.map(
-          (msg: IMessage & { id: string; isRead: boolean }) => ({
-            message: msg.text,
-            sentTime: msg.createdAt,
-            sender: msg.senderId,
-            direction: msg.role === "manager" ? "outgoing" : "incoming",
-            position: "single",
-            id: msg.id,
-            isRead: msg.isRead,
-            files: data.files,
-          }),
+          (msg: IMessage & IMessageModel) =>
+            ({
+              message: msg.text,
+              sentTime: msg.createdAt,
+              sender: msg.senderId,
+              direction: msg.role === "manager" ? "outgoing" : "incoming",
+              position: "single",
+              id: msg.id,
+              isRead: msg.isRead,
+              roomId: msg.roomId,
+            }) as IMessageModel,
         );
         setMessages(history);
-
-        const lastIncoming = [...data].reverse().find((m) => m.role === "user");
-        if (lastIncoming && !lastIncoming.isRead && socketRef.current) {
-          socketRef.current.emit("mark_as_read", {
-            messageId: lastIncoming.id,
-            chatWithId: activeUserId,
-          });
-        }
       })
-      .catch((err) => console.error("Ошибка истории:", err));
-  }, [activeUserId]);
+      .catch((err) => {
+        console.error("Ошибка истории:", err);
+        setMessages([]);
+      });
+  }, [activeRoomId]);
 
   const getUsersList = useCallback(() => {
     fetch(`${API_URL}/managers/active-chats`)
-      .then((e) => e.json())
-      .then((e) => setUsers(e as User[]));
+      .then((res) => res.json())
+      .then((serverUsers: User[]) => {
+        setUsers((prevLocalUsers) => {
+          // Находим чаты, которые мы создали вручную, но которых еще нет в базе
+          // (в базе их нет, потому что там еще 0 сообщений)
+          const localOnly = prevLocalUsers.filter(
+            (local) =>
+              !serverUsers.some((server) => server.roomId === local.roomId),
+          );
+
+          // Объединяем: сначала локальные (новые), потом из базы
+          return [...localOnly, ...serverUsers];
+        });
+      });
   }, []);
 
   useEffect(() => {
@@ -122,11 +117,7 @@ function App() {
     );
 
     socket.on("new_message", (data) => {
-      const currentChatId = activeUserRef.current;
-      const isFromActiveUser = String(data.senderId) === String(currentChatId);
-      const isToActiveUser = String(data.receiverId) === String(currentChatId);
-
-      if (isFromActiveUser || isToActiveUser) {
+      if (data.roomId === activeRoomRef.current) {
         const incomingMessage = {
           message: data.text,
           sentTime: data.createdAt || Date.now(),
@@ -135,36 +126,17 @@ function App() {
           position: "single",
           id: data.id,
           isRead: data.isRead,
-          files: data.files,
+          roomId: data.roomId,
         };
 
-        setCurrentRoomId(data.roomId);
-        setMessages((prev: MessageModel[]) => {
-          const isDuplicate = prev.some((m) => {
-            if (m.message !== incomingMessage.message) return false;
-
-            const prevTime = m.sentTime ? new Date(m.sentTime).getTime() : 0;
-            const newTime = new Date(incomingMessage.sentTime).getTime();
-
-            return Math.abs(prevTime - newTime) < 1000;
-          });
-
-          if (isDuplicate) return prev;
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === incomingMessage.id)) return prev;
           return [...prev, incomingMessage] as MessageModel[];
         });
       }
 
-      if (
-        data.role === "user" &&
-        String(data.senderId) === String(activeUserRef.current)
-      ) {
-        socket.emit("mark_as_read", {
-          messageId: data.id,
-          chatWithId: data.senderId,
-        });
-      }
+      getUsersList();
     });
-
     socketRef.current = socket;
 
     return () => {
@@ -173,83 +145,67 @@ function App() {
   }, [getUsersList]);
 
   const handleSend = (_: string, textContent: string) => {
-    if (socketRef.current && activeUserId) {
-      socketRef.current.emit("message_to_server", {
-        text: textContent,
-        toUserId: activeUserId,
-        roomId: currentRoomId,
-      });
+    if (!socketRef.current || !activeUserId || !activeRoomId) {
+      console.error("Не выбран чат или нет коннекта");
+      return;
     }
+    console.log(activeUserId);
+
+    socketRef.current.emit("message_to_server", {
+      text: textContent,
+      toUserId: activeUserId,
+      roomId: activeRoomId,
+    });
+
+    const myMessage: IMessageModel = {
+      message: textContent,
+      sentTime: new Date().toISOString(),
+      sender: "manager",
+      direction: "outgoing",
+      position: "single",
+      id: crypto.randomUUID(),
+    };
+    setMessages((prev) => [...prev, myMessage]);
   };
 
-  const addChat = () => {
-    if (roomData.userId && roomData.roomName) {
-      setActiveUserId(roomData.userId);
-      setUsers(
-        (p) =>
-          [
-            ...p,
-            {
-              senderId: roomData.userId,
-              receiverId: "admin",
-              role: "user",
-            },
-          ] as User[],
-      );
-    }
+  const handleAddChat = (userId: string, topic: string) => {
+    const newRoomId = crypto.randomUUID();
+    console.log("topic", topic);
+    setActiveUserId(userId);
+    setActiveRoomId(newRoomId);
+    setMessages([]);
+
+    setUsers((prev) => {
+      const newChat: User = {
+        id: crypto.randomUUID(),
+        senderId: userId,
+        receiverId: "manager",
+        role: "user",
+        roomId: newRoomId,
+      };
+      return [newChat, ...prev];
+    });
   };
 
   return (
     <div>
       <h1 style={{ fontSize: "20px" }}>Панель Администратора</h1>
-      <div style={{ border: "1px solid blue", width: "200px" }}>
-        <button onClick={() => addChat()}>Добавить чат</button>
-        <br />
-        <input
-          type="text"
-          placeholder="userId"
-          value={roomData.userId}
-          onChange={(e) =>
-            setRoomData((p) => ({ ...p, userId: e.target.value }))
-          }
-        />
-        <br />
-        <input
-          type="text"
-          placeholder="название комнаты"
-          value={roomData.roomName}
-          onChange={(e) =>
-            setRoomData((p) => ({ ...p, roomName: e.target.value }))
-          }
-        />
-      </div>
+      <AddChart onAddChat={handleAddChat} />
       <div style={{ display: "flex", height: "500px" }}>
-        <div>
-          <ConversationList
-            style={{ width: "300px", borderRight: "1px solid #ccc" }}
-          >
-            {users?.map((e) => {
-              return (
-                <Conversation
-                  key={e.id}
-                  name={`${e.senderId}`}
-                  lastSenderName={activeUserId === e.senderId ? "Вы" : "Клиент"}
-                  active={activeUserId === e.senderId}
-                  onClick={() => setActiveUserId(e.senderId)}
-                >
-                  <Avatar src="https://chatscope.io/storybook/react/assets/lilly-aj6lnGPk.svg" />
-                </Conversation>
-              );
-            })}
-          </ConversationList>
-        </div>
+        <Users
+          users={users}
+          activeRoomId={activeRoomId}
+          onChatSelect={(userId, roomId) => {
+            setActiveUserId(userId);
+            setActiveRoomId(roomId);
+          }}
+        />
         <div style={{ flexGrow: 1 }}>
           <MainContainer style={{ borderRadius: "0 10px 10px 0" }}>
             <ChatContainer>
               <MessageList>
                 {messages.map((m: IMessageModel, i) => (
                   <Message key={m.id || i} model={m}>
-                    {/* Только для исходящих сообщений менеджера */}
                     {m.direction === "outgoing" && (
                       <Message.Footer>
                         <div
@@ -268,6 +224,7 @@ function App() {
               <MessageInput
                 placeholder={`Написать пользователю ${activeUserId}...`}
                 onSend={handleSend}
+                disabled={!activeUserId}
               />
             </ChatContainer>
           </MainContainer>
