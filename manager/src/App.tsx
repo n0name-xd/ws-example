@@ -24,6 +24,7 @@ function App() {
   const activeUserRef = useRef(activeUserId);
   const activeRoomRef = useRef(activeRoomId);
   const [users, setUsers] = useState<User[]>([]);
+  const [activeRoomName, setActiveRoomName] = useState<string>("");
 
   const getHistory = useCallback(() => {
     if (!activeRoomId) return;
@@ -149,13 +150,15 @@ function App() {
       console.error("Не выбран чат или нет коннекта");
       return;
     }
-    console.log(activeUserId);
 
     socketRef.current.emit("message_to_server", {
       text: textContent,
       toUserId: activeUserId,
       roomId: activeRoomId,
+      roomName: activeRoomName,
     });
+
+    setActiveRoomName("");
 
     const myMessage: IMessageModel = {
       message: textContent,
@@ -170,9 +173,9 @@ function App() {
 
   const handleAddChat = (userId: string, topic: string) => {
     const newRoomId = crypto.randomUUID();
-    console.log("topic", topic);
     setActiveUserId(userId);
     setActiveRoomId(newRoomId);
+    setActiveRoomName(topic); // Сохраняем название темы
     setMessages([]);
 
     setUsers((prev) => {
@@ -182,7 +185,8 @@ function App() {
         receiverId: "manager",
         role: "user",
         roomId: newRoomId,
-      };
+        roomName: topic || "Новый чат", // Добавляем в локальный объект для Users.tsx
+      } as User;
       return [newChat, ...prev];
     });
   };

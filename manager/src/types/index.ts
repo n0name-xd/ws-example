@@ -19,4 +19,5 @@ export interface User {
   receiverId: string;
   role: string;
   roomId: string;
+  roomName: string;
 }

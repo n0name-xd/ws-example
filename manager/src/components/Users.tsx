@@ -20,13 +20,11 @@ export const Users: React.FC<IUsersProps> = ({
     <div style={{ width: "300px", borderRight: "1px solid #ccc" }}>
       <ConversationList>
         {users?.map((e) => {
-          const clientId = e.role === "manager" ? e.receiverId : e.senderId;
-
           return (
             <Conversation
               key={e.roomId}
-              name={`Клиент: ${clientId}`}
-              info={`Комната: ${e.roomId.slice(0, 8)}...`}
+              name={`Клиент: ${e.senderId}`}
+              info={`Комната: ${e.roomName}`}
               active={activeRoomId === e.roomId}
               onClick={() => {
                 const clientId =
