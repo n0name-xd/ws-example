@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 
 interface IAddChartProps {
-  // Функция, которую мы вызываем для создания чата в App.tsx
   onAddChat: (userId: string, topic: string) => void;
 }
 
@@ -13,10 +12,8 @@ export const AddChart: React.FC<IAddChartProps> = ({ onAddChat }) => {
     e.preventDefault();
     if (!userId.trim()) return;
 
-    // Вызываем функцию из App.tsx
     onAddChat(userId, topic || "Без темы");
 
-    // Очищаем поля
     setUserId("");
     setTopic("");
   };

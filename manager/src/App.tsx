@@ -66,14 +66,11 @@ function App() {
       .then((res) => res.json())
       .then((serverUsers: User[]) => {
         setUsers((prevLocalUsers) => {
-          // Находим чаты, которые мы создали вручную, но которых еще нет в базе
-          // (в базе их нет, потому что там еще 0 сообщений)
           const localOnly = prevLocalUsers.filter(
             (local) =>
               !serverUsers.some((server) => server.roomId === local.roomId),
           );
 
-          // Объединяем: сначала локальные (новые), потом из базы
           return [...localOnly, ...serverUsers];
         });
       });
@@ -175,7 +172,7 @@ function App() {
     const newRoomId = crypto.randomUUID();
     setActiveUserId(userId);
     setActiveRoomId(newRoomId);
-    setActiveRoomName(topic); // Сохраняем название темы
+    setActiveRoomName(topic);
     setMessages([]);
 
     setUsers((prev) => {
@@ -185,7 +182,7 @@ function App() {
         receiverId: "manager",
         role: "user",
         roomId: newRoomId,
-        roomName: topic || "Новый чат", // Добавляем в локальный объект для Users.tsx
+        roomName: topic || "Новый чат",
       } as User;
       return [newChat, ...prev];
     });
