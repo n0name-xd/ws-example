@@ -10,7 +10,7 @@ import {
   MessageInput,
   type MessageModel,
 } from "@chatscope/chat-ui-kit-react";
-import type { IMessage, IMessageModel, User } from "./types";
+import type { IMessageModel, User } from "./types";
 import { AddChart } from "./components/AddChart";
 import { Users } from "./components/Users";
 
@@ -26,38 +26,46 @@ function App() {
   const [users, setUsers] = useState<User[]>([]);
   const [activeRoomName, setActiveRoomName] = useState<string>("");
 
+  function markAsRead(messageId: string, userId: string) {
+    if (!socketRef.current || !messageId) return;
+
+    socketRef.current.emit("mark_as_read", {
+      messageId: messageId,
+      chatWithId: userId,
+    });
+  }
+
   const getHistory = useCallback(() => {
     if (!activeRoomId) return;
 
     fetch(`${API_URL}/messages/history/room/${activeRoomId}`)
-      .then((res) => {
-        if (!res.ok) throw new Error("Ошибка сервера или комната не найдена");
-        return res.json();
-      })
+      .then((res) => res.json())
       .then((data) => {
         if (!Array.isArray(data)) {
           setMessages([]);
           return;
         }
+        const history = data.map((msg) => ({
+          message: msg.text,
+          sentTime: msg.createdAt,
+          sender: msg.senderId,
+          direction: msg.role === "manager" ? "outgoing" : "incoming",
+          position: "single",
+          id: msg.id,
+          isRead: msg.isRead,
+          roomId: msg.roomId,
+        })) as IMessageModel[];
 
-        const history = data.map(
-          (msg: IMessage & IMessageModel) =>
-            ({
-              message: msg.text,
-              sentTime: msg.createdAt,
-              sender: msg.senderId,
-              direction: msg.role === "manager" ? "outgoing" : "incoming",
-              position: "single",
-              id: msg.id,
-              isRead: msg.isRead,
-              roomId: msg.roomId,
-            }) as IMessageModel,
-        );
         setMessages(history);
-      })
-      .catch((err) => {
-        console.error("Ошибка истории:", err);
-        setMessages([]);
+
+        const lastIncoming = [...data].reverse().find((m) => m.role === "user");
+
+        if (lastIncoming && !lastIncoming.isRead) {
+          socketRef.current?.emit("mark_as_read", {
+            messageId: lastIncoming.id,
+            chatWithId: lastIncoming.senderId,
+          });
+        }
       });
   }, [activeRoomId]);
 
@@ -77,8 +85,9 @@ function App() {
   }, []);
 
   useEffect(() => {
+    activeRoomRef.current = activeRoomId;
     activeUserRef.current = activeUserId;
-  }, [activeUserId]);
+  }, [activeRoomId, activeUserId]);
 
   useEffect(() => {
     getUsersList();
@@ -116,6 +125,13 @@ function App() {
 
     socket.on("new_message", (data) => {
       if (data.roomId === activeRoomRef.current) {
+        if (data.role === "user") {
+          socket.emit("mark_as_read", {
+            messageId: data.id,
+            chatWithId: data.senderId,
+          });
+        }
+
         const incomingMessage = {
           message: data.text,
           sentTime: data.createdAt || Date.now(),
@@ -126,6 +142,10 @@ function App() {
           isRead: data.isRead,
           roomId: data.roomId,
         };
+
+        if (data.role === "user") {
+          markAsRead(data.id, data.senderId);
+        }
 
         setMessages((prev) => {
           if (prev.some((m) => m.id === incomingMessage.id)) return prev;
