@@ -176,16 +176,6 @@ function App() {
     });
 
     setActiveRoomName("");
-
-    const myMessage: IMessageModel = {
-      message: textContent,
-      sentTime: new Date().toISOString(),
-      sender: "manager",
-      direction: "outgoing",
-      position: "single",
-      id: crypto.randomUUID(),
-    };
-    setMessages((prev) => [...prev, myMessage]);
   };
 
   const handleAddChat = (userId: string, topic: string) => {
@@ -216,9 +206,10 @@ function App() {
         <Users
           users={users}
           activeRoomId={activeRoomId}
-          onChatSelect={(userId, roomId) => {
+          onChatSelect={(userId, roomId, roomName) => {
             setActiveUserId(userId);
             setActiveRoomId(roomId);
+            setActiveRoomName(roomName);
           }}
         />
         <div style={{ flexGrow: 1 }}>

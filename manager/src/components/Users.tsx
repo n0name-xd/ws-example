@@ -8,7 +8,7 @@ import {
 interface IUsersProps {
   users: User[];
   activeRoomId: string | undefined | null;
-  onChatSelect: (userId: string, roomId: string) => void;
+  onChatSelect: (userId: string, roomId: string, roomName: string) => void;
 }
 
 export const Users: React.FC<IUsersProps> = ({
@@ -27,9 +27,9 @@ export const Users: React.FC<IUsersProps> = ({
               info={`Комната: ${e.roomName}`}
               active={activeRoomId === e.roomId}
               onClick={() => {
-                const clientId =
-                  e.role === "manager" ? e.receiverId : e.senderId;
-                onChatSelect(clientId, e.roomId);
+                // const clientId =
+                //   e.role === "manager" ? e.receiverId : e.senderId;
+                onChatSelect(e.senderId, e.roomId, e.roomName);
               }}
             >
               <Avatar src="https://chatscope.io/storybook/react/assets/lilly-aj6lnGPk.svg" />
